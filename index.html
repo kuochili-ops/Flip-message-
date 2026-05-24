@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>𓃥 機械翻板訊息傳遞 App - 網址相容優化版</title>
+    <title>𓃥 機械翻板訊息傳遞 App - 中英數智慧識別版</title>
     <style>
         body { 
             background-color: #0e1117; margin: 0; 
@@ -121,7 +121,6 @@
         }
         textarea:focus { outline: 1px solid #58a6ff; }
         
-        /* 橫向排列四個按鈕 */
         .btn-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
         button { 
             background: #ffffff; color: #000000; border: none;
@@ -141,7 +140,7 @@
 </div>
 
 <div class="control-panel" id="controlPanel">
-    <textarea id="msgInput" placeholder="請輸入欲傳遞的訊息（例如：大家新年快樂）"></textarea>
+    <textarea id="msgInput" placeholder="請輸入欲傳遞的訊息（例如：2026新年Happy）"></textarea>
     <div class="btn-row">
         <button onclick="playCurrentInput()">預覽顯示</button>
         <button onclick="shareURL()">產生網址</button>
@@ -155,6 +154,7 @@
 <script>
     let currentStates = {};
     let cardRandomTargets = {}; 
+    let cardSequences = {}; // 儲存每塊板子專屬的字庫序列
     let audioCtx = null;
     let mediaRecorder = null;
     let recordedChunks = [];
@@ -164,8 +164,9 @@
     let canvasTrackX = 0; 
     let targetCanvasTrackX = 0;
 
-    const NUM_SEQ = "0123456789";
-    const ALPHA_SEQ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const NUM_SEQ = "0123456789".split('');
+    const ALPHA_SEQ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
+    const PADDING_CHINESE = "甲乙丙丁戊己".split('');
 
     function initAudio() {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -198,27 +199,58 @@
         `;
     }
 
-    function rebuildTrack(totalCards, sourceCharsArray) {
+    // 判斷字元類型
+    function getCharType(char) {
+        if (/[0-9]/.test(char)) return 'number';
+        if (/[A-Za-z]/.test(char)) return 'alpha';
+        if (/[\u4e00-\u9fa5]/.test(char) || PADDING_CHINESE.includes(char)) return 'chinese';
+        return 'space';
+    }
+
+    // 🛠️ 智慧化構建軌道：依據中英數分類建立各自的隨選字庫
+    function rebuildTrack(charsArray, chinesePool) {
         const track = document.getElementById('panTrack');
         track.innerHTML = "";
         currentStates = {};
         cardRandomTargets = {}; 
+        cardSequences = {};
         track.style.transform = "translateX(0px)"; 
         
         canvasTrackX = 0;
         targetCanvasTrackX = 0;
 
-        for (let i = 0; i < totalCards; i++) {
+        for (let i = 0; i < charsArray.length; i++) {
             const cardId = `card-${i}`;
-            const filteredSource = sourceCharsArray.filter(c => c !== " ");
-            const sourcePool = filteredSource.length > 0 ? filteredSource : ["？"];
-            const randomPick = sourcePool[Math.floor(Math.random() * sourcePool.length)];
+            const targetChar = charsArray[i].toUpperCase();
+            const type = getCharType(targetChar);
+
+            let seq = [];
+            let randomPick = " ";
+
+            if (type === 'number') {
+                seq = [...NUM_SEQ];
+                const pool = seq.filter(c => c !== targetChar);
+                randomPick = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : seq[0];
+            } else if (type === 'alpha') {
+                seq = [...ALPHA_SEQ];
+                const pool = seq.filter(c => c !== targetChar);
+                randomPick = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : seq[0];
+            } else if (type === 'chinese') {
+                seq = [...chinesePool];
+                const pool = seq.filter(c => c !== targetChar);
+                randomPick = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : seq[0];
+            } else {
+                seq = [" "];
+                randomPick = " ";
+            }
+
+            cardSequences[cardId] = seq;
             cardRandomTargets[cardId] = randomPick;
 
             const card = document.createElement('div');
             card.className = 'flip-card';
             card.id = cardId;
-            card.innerHTML = createPanelHTML(" "); 
+            card.innerHTML = createPanelHTML(" "); // 初始狀態一律為空白
             track.appendChild(card);
             
             currentStates[cardId] = " "; 
@@ -245,18 +277,15 @@
         setTimeout(() => { el.querySelector('.static-bottom').innerHTML = displayNew; }, 160); 
     }
 
-    function flipCardToTargetFlow(id, finalTargetVal, customSeq) {
+    // 雙階段翻轉流程
+    function flipCardToTargetFlow(id, finalTargetVal) {
         return new Promise(async (resolve) => {
             finalTargetVal = finalTargetVal.toUpperCase();
-            const randomTargetVal = cardRandomTargets[id].toUpperCase();
+            const randomTargetVal = cardRandomTargets[id];
+            const baseSeq = cardSequences[id];
 
-            let baseSeq = [];
-            if (NUM_SEQ.includes(finalTargetVal)) {
-                baseSeq = NUM_SEQ.split('');
-            } else if (ALPHA_SEQ.includes(finalTargetVal)) {
-                baseSeq = ALPHA_SEQ.split('');
-            } else {
-                baseSeq = [...customSeq];
+            if (baseSeq.length <= 1 && baseSeq[0] === " ") {
+                resolve(); return; // 空白字元不需翻轉
             }
 
             // --- 第一階段：從 空白 ➡️ 隨機字 ---
@@ -313,6 +342,7 @@
         });
     }
 
+    // 🛠️ 智慧字串解析與填充器
     async function processMessage(fullText) {
         if (isPlaying) return;
         isPlaying = true;
@@ -322,21 +352,32 @@
         if (lines.length === 0) { isPlaying = false; return; }
 
         for (let line of lines) {
-            let processedLine = line;
-            if (processedLine.length < 6) {
-                const padding = "甲乙丙丁戊己";
-                processedLine = processedLine + padding.substring(0, 6 - processedLine.length);
+            // 1. 計算當前輸入字串中，純中文字的總數量
+            let chineseChars = line.split('').filter(c => /[\u4e00-\u9fa5]/.test(c));
+            let chineseCount = chineseChars.length;
+
+            // 2. 建立中文字庫滾動池 (原始中文字 + 湊數用的補字)
+            let chinesePool = [...chineseChars];
+            if (chineseCount < 6) {
+                let needPackCount = 6 - chineseCount;
+                chinesePool = chinesePool.concat(PADDING_CHINESE.slice(0, needPackCount));
             }
 
-            const charsArray = processedLine.split('');
-            const totalCards = charsArray.length;
-            
-            rebuildTrack(totalCards, charsArray);
+            // 3. 建立最終要顯示在面板上的混和陣列
+            let finalDisplayArray = line.split('');
+            if (chineseCount < 6) {
+                let needPackCount = 6 - chineseCount;
+                // 將「甲乙丙丁...」依序補在字串的尾端
+                finalDisplayArray = finalDisplayArray.concat(PADDING_CHINESE.slice(0, needPackCount));
+            }
+
+            // 4. 重構智慧型看板軌道
+            rebuildTrack(finalDisplayArray, chinesePool);
             await new Promise(r => setTimeout(r, 500)); 
 
             const track = document.getElementById('panTrack');
             
-            for (let i = 0; i < totalCards; i++) {
+            for (let i = 0; i < finalDisplayArray.length; i++) {
                 if (i >= 4) {
                     const cardWidth = document.querySelector('.flip-card').offsetWidth;
                     const gapWidth = window.innerWidth * 0.03; 
@@ -347,7 +388,7 @@
                     await new Promise(r => setTimeout(r, 350)); 
                 }
 
-                await flipCardToTargetFlow(`card-${i}`, charsArray[i], charsArray);
+                await flipCardToTargetFlow(`card-${i}`, finalDisplayArray[i]);
                 await new Promise(r => setTimeout(r, 180)); 
             }
             await new Promise(r => setTimeout(r, 1500)); 
@@ -362,9 +403,10 @@
 
     function playCurrentInput() {
         const text = document.getElementById('msgInput').value;
-        processMessage(text || "大家新年快樂");
+        processMessage(text || "2026新年Happy");
     }
 
+    // 錄影渲染引擎
     function drawCanvasFrame() {
         if (!isRecordingActive) return;
 
@@ -443,7 +485,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `flip_video_${Date.now()}.webm`;
+            a.download = `flip_mix_video_${Date.now()}.webm`;
             a.click();
             toggleControls(true);
         };
@@ -467,31 +509,26 @@
         document.getElementById('restoreBtn').style.display = show ? 'none' : 'block';
     }
 
-    // 🛠️ 修正優化：高相容性網址產生器
     function shareURL() {
         const msg = document.getElementById('msgInput').value;
         if (!msg) { alert("請先輸入訊息再產生網址！"); return; }
         
-        // 精準取得當前環境（無論是 localhost 或外部 ip）的全網址路徑
         const currentUrl = window.location.href.split('?')[0];
         const finalUrl = `${currentUrl}?msg=${encodeURIComponent(msg)}`;
 
-        // 第一防線：常規寫入剪貼簿
         if (navigator.clipboard && navigator.clipboard.writeText) {
             navigator.clipboard.writeText(finalUrl).then(() => {
                 alert("網址已成功複製到剪貼簿！");
             }).catch(() => {
-                // 第二防線：若瀏覽器拒絕權限，則改用 Prompt 彈窗讓使用者手動複製
                 window.prompt("因為瀏覽器安全限制，請全選並複製下方網址：", finalUrl);
             });
         } else {
-            // 第三防線：舊版瀏覽器或內嵌環境直接用 Prompt
             window.prompt("請全選並複製下方專屬分享網址：", finalUrl);
         }
     }
 
     window.onload = () => {
-        rebuildTrack(4, [" ", " ", " ", " "]); 
+        rebuildTrack([" ", " ", " ", " "], []); 
         const params = new URLSearchParams(window.location.search);
         if (params.has('msg')) {
             document.getElementById('msgInput').value = params.get('msg');
