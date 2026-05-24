@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>𓃥 機械翻板訊息傳遞 App - 全自動錄影版</title>
+    <title>𓃥 機械翻板訊息傳遞 App - 隨機起點與高相容錄影版</title>
     <style>
         body { 
             background-color: #0e1117; margin: 0; 
@@ -37,9 +37,9 @@
         /* 恢復界面按鈕 */
         .restore-btn {
             position: absolute; bottom: 10px; right: 10px;
-            background: rgba(255,255,255,0.1); color: #aaa;
-            border: none; padding: 5px 10px; border-radius: 4px;
-            font-size: 0.6rem; cursor: pointer; display: none; z-index: 100;
+            background: rgba(255,255,255,0.2); color: #fff;
+            border: none; padding: 6px 12px; border-radius: 4px;
+            font-size: 0.75rem; cursor: pointer; display: none; z-index: 100;
         }
 
         /* 基礎翻板外殼 */
@@ -183,18 +183,20 @@
         } catch (e) {}
     }
 
-    function createPanelHTML() {
+    function createPanelHTML(initialChar) {
+        const displayChar = initialChar === " " ? "&nbsp;" : initialChar;
         return `
-            <div class="half-panel static-top"><span>&nbsp;</span></div>
-            <div class="half-panel static-bottom"><span>&nbsp;</span></div>
+            <div class="half-panel static-top"><span>${displayChar}</span></div>
+            <div class="half-panel static-bottom"><span>${displayChar}</span></div>
             <div class="leaf-wrapper">
-                <div class="half-panel leaf-front-panel"><span>&nbsp;</span></div>
-                <div class="half-panel leaf-back-panel"><span>&nbsp;</span></div>
+                <div class="half-panel leaf-front-panel"><span>${displayChar}</span></div>
+                <div class="half-panel leaf-back-panel"><span>${displayChar}</span></div>
             </div>
         `;
     }
 
-    function rebuildTrack(totalCards) {
+    // 重構軌道：起始字從目前的候選字串中「隨機挑選」
+    function rebuildTrack(totalCards, sourceCharsArray) {
         const track = document.getElementById('panTrack');
         track.innerHTML = "";
         currentStates = {};
@@ -202,12 +204,18 @@
 
         for (let i = 0; i < totalCards; i++) {
             const cardId = `card-${i}`;
+            
+            // 🛠️ 核心修改：從當前處理的字串陣列中，隨機抽出一個字作為起始面板字
+            const randomPick = sourceCharsArray[Math.floor(Math.random() * sourceCharsArray.length)];
+            
             const card = document.createElement('div');
             card.className = 'flip-card';
             card.id = cardId;
-            card.innerHTML = createPanelHTML();
+            card.innerHTML = createPanelHTML(randomPick);
             track.appendChild(card);
-            currentStates[cardId] = " ";
+            
+            // 紀錄該板子的初始狀態
+            currentStates[cardId] = randomPick;
         }
     }
 
@@ -247,6 +255,7 @@
             }
 
             let curIdx = seq.indexOf(startVal);
+            // 如果起點字不在常規序列裡，強制重設回 0
             if (curIdx === -1) curIdx = 0;
 
             let interval = setInterval(() => {
@@ -260,11 +269,11 @@
                     clearInterval(interval);
                     resolve();
                 }
-            }, 180); 
+            }, 150); // 稍微加快一點滾動流暢感
         });
     }
 
-    // 核心播放程序 (整合全自動錄影控時)
+    // 核心播放程序
     async function processMessage(fullText) {
         if (isPlaying) return;
         isPlaying = true;
@@ -283,8 +292,9 @@
             const charsArray = processedLine.split('');
             const totalCards = charsArray.length;
             
-            rebuildTrack(totalCards);
-            await new Promise(r => setTimeout(r, 200));
+            // 傳入 charsArray 讓重建軌道時可以隨機取字
+            rebuildTrack(totalCards, charsArray);
+            await new Promise(r => setTimeout(r, 400)); // 留時間給眼睛看隨機初始狀態
 
             const track = document.getElementById('panTrack');
             
@@ -298,14 +308,13 @@
                 }
 
                 await flipCardToTarget(`card-${i}`, charsArray[i], charsArray);
-                await new Promise(r => setTimeout(r, 200)); 
+                await new Promise(r => setTimeout(r, 150)); 
             }
-            await new Promise(r => setTimeout(r, 1500)); // 播完特定行留白停頓
+            await new Promise(r => setTimeout(r, 1500)); 
         }
 
         isPlaying = false;
 
-        // 【自動化核心】：如果當前處於錄影狀態，播放完畢自動收尾並下載
         if (isRecordingActive) {
             stopAndSaveRecording();
         }
@@ -316,45 +325,55 @@
         processMessage(text || "大家新年快樂");
     }
 
-    // 全自動錄影流程啟動器
+    // 全自動錄影流程 (修正 captureStream 綁定目標)
     function startAutoRecordFlow() {
         if (isPlaying) return;
         initAudio();
         
-        // 1. 隱藏控制界面，確保影片乾淨
         toggleControls(false);
         
-        // 2. 喚醒錄影
         recordedChunks = [];
-        const stream = document.body.captureStream ? document.body.captureStream(30) : null;
+        // 🛠️ 關鍵修正：不再對 body 錄影，而是改對 16:9 的視窗容器「#viewport」進行錄製，大大提升瀏覽器相容性！
+        const videoTarget = document.getElementById('viewport');
+        const stream = videoTarget.captureStream ? videoTarget.captureStream(30) : videoTarget.webkitCaptureStream(30);
+        
         if (!stream) { 
-            alert("此瀏覽器不支援畫面錄製。"); 
+            alert("此瀏覽器環境安全性限制，無法啟動錄影。建議使用 Chrome 瀏覽器。"); 
             toggleControls(true);
             return; 
         }
         
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
-        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+        // 為了相容行動裝置，採用通用錄影配置
+        let options = { mimeType: 'video/webm;codecs=vp8' };
+        try {
+            mediaRecorder = new MediaRecorder(stream, options);
+        } catch(e) {
+            options = { mimeType: 'video/webm' };
+            try {
+                mediaRecorder = new MediaRecorder(stream, options);
+            } catch(err) {
+                mediaRecorder = new MediaRecorder(stream);
+            }
+        }
+        
+        mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
         mediaRecorder.onstop = () => {
             const blob = new Blob(recordedChunks, { type: 'video/webm' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `auto_flip_${Date.now()}.webm`;
+            a.download = `mechanical_flip_${Date.now()}.webm`;
             a.click();
-            
-            // 錄影下載完成後，自動把控制界面還給使用者
             toggleControls(true);
         };
 
         mediaRecorder.start();
         isRecordingActive = true;
 
-        // 3. 觸發播放
+        // 啟動翻頁
         playCurrentInput();
     }
 
-    // 關閉錄影並存檔
     function stopAndSaveRecording() {
         if (mediaRecorder && mediaRecorder.state === "recording") {
             mediaRecorder.stop();
@@ -372,20 +391,18 @@
         if (!msg) { alert("請先輸入訊息再進行分享！"); return; }
         const url = `${window.location.origin}${window.location.pathname}?msg=${encodeURIComponent(msg)}`;
         navigator.clipboard.writeText(url).then(() => {
-            alert("已複製全自動錄影版分享網址！");
+            alert("已複製網址！");
         }).catch(() => {
-            prompt("請複製以下網址進行分享：", url);
+            prompt("請複製以下網址：", url);
         });
     }
 
     window.onload = () => {
-        rebuildTrack(4); 
+        rebuildTrack(4, [" ", " ", " ", " "]); 
         const params = new URLSearchParams(window.location.search);
         if (params.has('msg')) {
             const msgVal = params.get('msg');
             document.getElementById('msgInput').value = msgVal;
-            
-            // 如果是由 URL 點進來的，觸發全自動錄影流程
             setTimeout(() => {
                 startAutoRecordFlow();
             }, 1000);
