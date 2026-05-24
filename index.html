@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>𓃥 機械翻板訊息傳遞 App - 完美翻轉順序版</title>
+    <title>𓃥 機械翻板訊息傳遞 App - 完美翻轉與原畫質錄影版</title>
     <style>
         body { 
             background-color: #0e1117; margin: 0; 
@@ -134,10 +134,7 @@
         button:hover { background: #30363d; border-color: #8b949e; }
         button.action-rec { background: #238636; color: #fff; border-color: #2ea44f; }
         button.action-rec:hover { background: #2ea44f; }
-
-        #recordingCanvas { display: none; }
     </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 
@@ -156,17 +153,14 @@
     </div>
 </div>
 
-<canvas id="recordingCanvas"></canvas>
-
 <script>
     let currentStates = {};
-    let cardRandomTargets = {}; // 儲存每塊板子被分配到的隨機字
+    let cardRandomTargets = {}; 
     let audioCtx = null;
     let mediaRecorder = null;
     let recordedChunks = [];
     let isPlaying = false;
     let isRecordingActive = false;
-    let canvasAnimLoop = null;
 
     const NUM_SEQ = "0123456789";
     const ALPHA_SEQ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -202,7 +196,6 @@
         `;
     }
 
-    // 🛠️ 規則修正：所有翻板初始狀態一律強制為 " " (空白)
     function rebuildTrack(totalCards, sourceCharsArray) {
         const track = document.getElementById('panTrack');
         track.innerHTML = "";
@@ -213,14 +206,16 @@
         for (let i = 0; i < totalCards; i++) {
             const cardId = `card-${i}`;
             
-            // 幕後抽好這塊板子等一下要路過的隨機字
-            const randomPick = sourceCharsArray[Math.floor(Math.random() * sourceCharsArray.length)];
+            // 隨機抽選第一階段隨機字（排除空白，確保一定有隨機字可以翻）
+            const filteredSource = sourceCharsArray.filter(c => c !== " ");
+            const sourcePool = filteredSource.length > 0 ? filteredSource : ["？"];
+            const randomPick = sourcePool[Math.floor(Math.random() * sourcePool.length)];
             cardRandomTargets[cardId] = randomPick;
 
             const card = document.createElement('div');
             card.className = 'flip-card';
             card.id = cardId;
-            card.innerHTML = createPanelHTML(" "); // 👈 表面初始為空白
+            card.innerHTML = createPanelHTML(" "); // 起始固定為空白
             track.appendChild(card);
             
             currentStates[cardId] = " "; 
@@ -247,13 +242,12 @@
         setTimeout(() => { el.querySelector('.static-bottom').innerHTML = displayNew; }, 160); 
     }
 
-    // 🛠️ 雙階段精準翻轉控制器
+    // 雙階段精準翻轉
     function flipCardToTargetFlow(id, finalTargetVal, customSeq) {
         return new Promise(async (resolve) => {
             finalTargetVal = finalTargetVal.toUpperCase();
             const randomTargetVal = cardRandomTargets[id].toUpperCase();
 
-            // 建立標準字串序列庫
             let baseSeq = [];
             if (NUM_SEQ.includes(finalTargetVal)) {
                 baseSeq = NUM_SEQ.split('');
@@ -263,12 +257,11 @@
                 baseSeq = [...customSeq];
             }
 
-            // --- 【第一階段】：從 空白 翻到 隨機字 ---
+            // --- 第一階段：從 空白 ➡️ 隨機字 ---
             await new Promise((res) => {
-                let current = currentStates[id]; // 必定是 " "
+                let current = currentStates[id];
                 if (current === randomTargetVal) { res(); return; }
 
-                // 隨機字序列：[" ", 隨機字] 或是中間夾一兩個字增加滾動感
                 let stepSeq = [" ", randomTargetVal];
                 let idx = 0;
 
@@ -285,15 +278,14 @@
                 }, 140);
             });
 
-            // 在隨機字狀態稍微停頓 250 毫秒，營造機械咬合感
-            await new Promise(r => setTimeout(r, 250));
+            // 停頓 300ms
+            await new Promise(r => setTimeout(r, 300));
 
-            // --- 【第二階段】：從 隨機字 依字串順序翻到 目標字 ---
+            // --- 第二階段：從 隨機字 ➡️ 最終目標字 ---
             await new Promise((res) => {
                 let current = currentStates[id];
                 if (current === finalTargetVal) { res(); return; }
 
-                // 以 baseSeq 為基礎，找出隨機字起點，順向滾動
                 let startIdx = baseSeq.indexOf(current);
                 let seq = [];
                 if (startIdx !== -1) {
@@ -320,7 +312,6 @@
         });
     }
 
-    // 核心播放控制
     async function processMessage(fullText) {
         if (isPlaying) return;
         isPlaying = true;
@@ -339,9 +330,8 @@
             const charsArray = processedLine.split('');
             const totalCards = charsArray.length;
             
-            // 初始化全空白看板
             rebuildTrack(totalCards, charsArray);
-            await new Promise(r => setTimeout(r, 500)); // 靜態空白保持半秒再開翻
+            await new Promise(r => setTimeout(r, 500)); 
 
             const track = document.getElementById('panTrack');
             
@@ -354,7 +344,6 @@
                     await new Promise(r => setTimeout(r, 350)); 
                 }
 
-                // 呼叫全新的雙階段翻轉流程
                 await flipCardToTargetFlow(`card-${i}`, charsArray[i], charsArray);
                 await new Promise(r => setTimeout(r, 180)); 
             }
@@ -373,62 +362,57 @@
         processMessage(text || "大家新年快樂");
     }
 
-    // Canvas 錄影橋樑
-    function syncViewportToCanvas() {
-        if (!isRecordingActive) return;
-        const v = document.getElementById('viewport');
-        const canvas = document.getElementById('recordingCanvas');
-        const ctx = canvas.getContext('2d');
-
-        if (canvas.width !== v.offsetWidth) {
-            canvas.width = v.offsetWidth;
-            canvas.height = v.offsetHeight;
-        }
-
-        html2canvas(v, {
-            backgroundColor: "#000",
-            scale: 1, 
-            logging: false
-        }).then(snapCanvas => {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(snapCanvas, 0, 0);
-            if (isRecordingActive) {
-                canvasAnimLoop = requestAnimationFrame(syncViewportToCanvas);
-            }
-        });
-    }
-
+    // 🛠️ 原生 DOM 錄影管道，徹底排除扭曲與反轉bug
     function startAutoRecordFlow() {
         if (isPlaying) return;
         initAudio();
         toggleControls(false);
         
-        const canvas = document.getElementById('recordingCanvas');
+        const viewport = document.getElementById('viewport');
         isRecordingActive = true;
-        
-        syncViewportToCanvas();
-
-        const stream = canvas.captureStream(30);
         recordedChunks = [];
+
+        // 精準攔截頂部視窗的影音串流
+        const stream = viewport.captureStream ? viewport.captureStream(30) : viewport.webkitCaptureStream(30);
         
-        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
+        if (!stream) {
+            alert("目前瀏覽器不支援直接畫面錄製。");
+            toggleControls(true);
+            return;
+        }
+
+        // 偵測並使用高相容錄影格式
+        let options = { mimeType: 'video/webm;codecs=vp9,opus' };
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+            options = { mimeType: 'video/webm;codecs=vp8' };
+        }
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+            options = { mimeType: 'video/webm' };
+        }
+
+        try {
+            mediaRecorder = new MediaRecorder(stream, options);
+        } catch(e) {
+            mediaRecorder = new MediaRecorder(stream);
+        }
+        
         mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
         mediaRecorder.onstop = () => {
-            cancelAnimationFrame(canvasAnimLoop);
             const blob = new Blob(recordedChunks, { type: 'video/webm' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `mechanical_perfect_${Date.now()}.webm`;
+            a.download = `perfect_flip_${Date.now()}.webm`;
             a.click();
             toggleControls(true);
         };
 
         mediaRecorder.start();
 
+        // 啟動動畫
         setTimeout(() => {
             playCurrentInput();
-        }, 300);
+        }, 400);
     }
 
     function stopAndSaveRecording() {
