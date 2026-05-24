@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>𓃥 機械翻板訊息傳遞 App - 中文精準湊字退場版</title>
+    <title>𓃥 機械翻板訊息傳遞 App - 精準看板無贅板版</title>
     <style>
         body { 
             background-color: #0e1117; margin: 0; 
@@ -202,10 +202,11 @@
     function getCharType(char) {
         if (/[0-9]/.test(char)) return 'number';
         if (/[A-Za-z]/.test(char)) return 'alpha';
-        if (/[\u4e00-\u9fa5]/.test(char) || PADDING_CHINESE.includes(char)) return 'chinese';
+        if (/[\u4e00-\u9fa5]/.test(char)) return 'chinese';
         return 'space';
     }
 
+    // 🛠️ 核心修改：精準根據輸入字串長度建立看板，不再有多餘的後端填充看板
     function rebuildTrack(charsArray, chinesePool) {
         const track = document.getElementById('panTrack');
         track.innerHTML = "";
@@ -234,6 +235,7 @@
                 const pool = seq.filter(c => c !== targetChar);
                 randomPick = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : seq[0];
             } else if (type === 'chinese') {
+                // 中文板子專屬：滾動字庫序列融合了「當前所有輸入中文字 + 甲乙丙丁湊數包」
                 seq = [...chinesePool];
                 const pool = seq.filter(c => c !== targetChar);
                 randomPick = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : seq[0];
@@ -339,18 +341,7 @@
         });
     }
 
-    function flipCardBackToSpace(id) {
-        return new Promise((resolve) => {
-            let current = currentStates[id];
-            if (current === " ") { resolve(); return; }
-
-            runPhysicalFlipAnimation(id, " ", current);
-            currentStates[id] = " ";
-            setTimeout(resolve, 180);
-        });
-    }
-
-    // 🛠️ 精準重構核心：智慧位置運算與獨立退場機制
+    // 🛠️ 核心修改：只對使用者輸入的文字進行嚴格一比一拆解
     async function processMessage(fullText) {
         if (isPlaying) return;
         isPlaying = true;
@@ -360,36 +351,27 @@
         if (lines.length === 0) { isPlaying = false; return; }
 
         for (let line of lines) {
-            // 1. 分離出純中文字
+            // 1. 抓出字串內含的純中文字
             let chineseChars = line.split('').filter(c => /[\u4e00-\u9fa5]/.test(c));
             let chineseCount = chineseChars.length;
 
-            // 2. 建立中文字滾動池
-            let chinesePool = [...chineseChars];
-            let paddingCount = 0;
+            // 2. 建立中文字的「滾動專用池」（如果中文字不滿六個，就把甲乙丙丁灌進池子裡，供翻牌動畫使用）
+            let chineseAnimPool = [...chineseChars];
             if (chineseCount < 6) {
-                paddingCount = 6 - chineseCount;
-                chinesePool = chinesePool.concat(PADDING_CHINESE.slice(0, paddingCount));
+                let needPackCount = 6 - chineseCount;
+                chineseAnimPool = chineseAnimPool.concat(PADDING_CHINESE.slice(0, needPackCount));
             }
 
-            // 3. 建立最終顯示陣列（保持原始輸入順序，並將湊數用的甲乙丙丁精準黏在最尾端）
+            // 3. 嚴格一比一對應使用者的輸入，不延長、不加贅板
             let finalDisplayArray = line.split('');
-            let paddingIndices = []; // 用來追蹤需要隱藏的板子索引位置
 
-            if (chineseCount < 6) {
-                for (let k = 0; k < paddingCount; k++) {
-                    paddingIndices.push(finalDisplayArray.length); // 記錄湊數板子的 Index
-                    finalDisplayArray.push(PADDING_CHINESE[k]);
-                }
-            }
-
-            // 4. 初始化看盤軌道
-            rebuildTrack(finalDisplayArray, chinesePool);
+            // 4. 重構智慧型看盤軌道
+            rebuildTrack(finalDisplayArray, chineseAnimPool);
             await new Promise(r => setTimeout(r, 500)); 
 
             const track = document.getElementById('panTrack');
             
-            // 5. 開始大面積下翻（所有板子一起動）
+            // 5. 依序翻出文字
             for (let i = 0; i < finalDisplayArray.length; i++) {
                 if (i >= 4) {
                     const cardWidth = document.querySelector('.flip-card').offsetWidth;
@@ -405,20 +387,8 @@
                 await new Promise(r => setTimeout(r, 180)); 
             }
 
-            // 全排顯示完畢，定格感受氣勢 600ms
-            await new Promise(r => setTimeout(r, 600)); 
-
-            // 🛠️ 核心修正：精準對被標記為「湊數用」的板子同步下達翻回空白指令
-            if (paddingIndices.length > 0) {
-                let hidePromises = [];
-                paddingIndices.forEach(idx => {
-                    hidePromises.push(flipCardBackToSpace(`card-${idx}`));
-                });
-                await Promise.all(hidePromises); // 所有湊名字的板子集體退場
-            }
-
-            // 最終乾淨的畫面維持 1.5 秒
-            await new Promise(r => setTimeout(r, 1500)); 
+            // 最終乾淨利落的展示定格維持 2 秒
+            await new Promise(r => setTimeout(r, 2000)); 
         }
 
         isPlaying = false;
@@ -433,6 +403,7 @@
         processMessage(text || "Annie 早安");
     }
 
+    // 幕後錄影引擎
     function drawCanvasFrame() {
         if (!isRecordingActive) return;
 
@@ -511,7 +482,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `flip_perfect_mix_${Date.now()}.webm`;
+            a.download = `flip_clean_mix_${Date.now()}.webm`;
             a.click();
             toggleControls(true);
         };
@@ -530,7 +501,6 @@
         }
     }
 
-    // 操作面板隱藏與顯示
     function toggleControls(show) {
         document.getElementById('controlPanel').style.display = show ? 'block' : 'none';
         document.getElementById('restoreBtn').style.display = show ? 'none' : 'block';
