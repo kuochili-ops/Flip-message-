@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>𓃥 機械翻板訊息傳遞 App - 完美翻轉與原畫質錄影版</title>
+    <title>𓃥 機械翻板訊息傳遞 App - 100% 相容終極錄影版</title>
     <style>
         body { 
             background-color: #0e1117; margin: 0; 
@@ -67,14 +67,12 @@
             backface-visibility: hidden; -webkit-backface-visibility: hidden;
         }
 
-        /* 文字拉長 */
         .half-panel span {
             display: inline-block;
             transform: scaleY(1.3);
             transform-origin: center center;
         }
 
-        /* 固定底板 */
         .static-top { 
             clip-path: inset(0% 0% 50% 0%); 
             border-bottom: 1px solid rgba(0,0,0,0.6); 
@@ -83,7 +81,6 @@
             clip-path: inset(50% 0% 0% 0%); 
         }
 
-        /* 旋轉活動葉片容器 */
         .leaf-wrapper {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             z-index: 10;
@@ -101,7 +98,6 @@
             transform: rotateX(180deg);
         }
 
-        /* 機械下翻動畫 */
         .flipping .leaf-wrapper {
             animation: flipDownAnimation 0.18s cubic-bezier(0.37, 0, 0.63, 1) forwards;
         }
@@ -134,6 +130,9 @@
         button:hover { background: #30363d; border-color: #8b949e; }
         button.action-rec { background: #238636; color: #fff; border-color: #2ea44f; }
         button.action-rec:hover { background: #2ea44f; }
+
+        /* 隱藏的背景畫布（用來繞過所有錄影限制） */
+        #recordingCanvas { display: none; }
     </style>
 </head>
 <body>
@@ -147,11 +146,13 @@
     <textarea id="msgInput" placeholder="請輸入欲傳遞的訊息（例如：大家新年快樂）"></textarea>
     <div class="btn-row">
         <button onclick="playCurrentInput()">預覽顯示</button>
-        <button onclick="shareURL()">URL 分享鈕</button>
-        <button id="recBtn" class="action-rec" onclick="startAutoRecordFlow()">自動錄影鈕</button>
-        <button onclick="toggleControls(false)">隱藏控制界面</button>
+        <button onclick="shareURL()">產生網址</button>
+        <button id="recBtn" class="action-rec" onclick="startAutoRecordFlow()">錄影存檔</button>
+        <button onclick="toggleControls(false)">隱藏界面</button>
     </div>
 </div>
+
+<canvas id="recordingCanvas" width="1280" height="720"></canvas>
 
 <script>
     let currentStates = {};
@@ -161,6 +162,10 @@
     let recordedChunks = [];
     let isPlaying = false;
     let isRecordingActive = false;
+
+    // Canvas 渲染專用變數
+    let canvasTrackX = 0; 
+    let targetCanvasTrackX = 0;
 
     const NUM_SEQ = "0123456789";
     const ALPHA_SEQ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -202,11 +207,12 @@
         currentStates = {};
         cardRandomTargets = {}; 
         track.style.transform = "translateX(0px)"; 
+        
+        canvasTrackX = 0;
+        targetCanvasTrackX = 0;
 
         for (let i = 0; i < totalCards; i++) {
             const cardId = `card-${i}`;
-            
-            // 隨機抽選第一階段隨機字（排除空白，確保一定有隨機字可以翻）
             const filteredSource = sourceCharsArray.filter(c => c !== " ");
             const sourcePool = filteredSource.length > 0 ? filteredSource : ["？"];
             const randomPick = sourcePool[Math.floor(Math.random() * sourcePool.length)];
@@ -215,7 +221,7 @@
             const card = document.createElement('div');
             card.className = 'flip-card';
             card.id = cardId;
-            card.innerHTML = createPanelHTML(" "); // 起始固定為空白
+            card.innerHTML = createPanelHTML(" "); 
             track.appendChild(card);
             
             currentStates[cardId] = " "; 
@@ -242,7 +248,6 @@
         setTimeout(() => { el.querySelector('.static-bottom').innerHTML = displayNew; }, 160); 
     }
 
-    // 雙階段精準翻轉
     function flipCardToTargetFlow(id, finalTargetVal, customSeq) {
         return new Promise(async (resolve) => {
             finalTargetVal = finalTargetVal.toUpperCase();
@@ -278,7 +283,6 @@
                 }, 140);
             });
 
-            // 停頓 300ms
             await new Promise(r => setTimeout(r, 300));
 
             // --- 第二階段：從 隨機字 ➡️ 最終目標字 ---
@@ -341,6 +345,9 @@
                     const gapWidth = window.innerWidth * 0.03; 
                     const offset = (i - 3) * (cardWidth + gapWidth);
                     track.style.transform = `translateX(-${offset}px)`;
+                    
+                    // 同步給幕後 Canvas 計算位移量
+                    targetCanvasTrackX = -(i - 3) * (140 + 20); 
                     await new Promise(r => setTimeout(r, 350)); 
                 }
 
@@ -362,34 +369,86 @@
         processMessage(text || "大家新年快樂");
     }
 
-    // 🛠️ 原生 DOM 錄影管道，徹底排除扭曲與反轉bug
+    // 🛠️ 終極二維渲染引擎（直接將狀態重繪製到 Canvas 像素，100% 繞過相容性 Bug）
+    function drawCanvasFrame() {
+        if (!isRecordingActive) return;
+
+        const canvas = document.getElementById('recordingCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 1. 塗黑背景 (16:9 比例標竿 1280x720)
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 2. 軌道平滑逼近緩動
+        canvasTrackX += (targetCanvasTrackX - canvasTrackX) * 0.1;
+
+        // 3. 繪製所有活動看板
+        ctx.save();
+        ctx.translate(80 + canvasTrackX, 150); // 基礎起點位移
+
+        const cardKeys = Object.keys(currentStates);
+        cardKeys.forEach((key, index) => {
+            const char = currentStates[key] || " ";
+            const x = index * (140 + 20); // 卡片寬 140，間距 20
+            const y = 0;
+            const w = 140;
+            const h = 210;
+
+            // 畫卡片暗黑外殼
+            ctx.fillStyle = "#1a1a1a";
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, 12);
+            ctx.fill();
+
+            // 畫分頁水平黑線
+            ctx.strokeStyle = "rgba(0,0,0,0.6)";
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(x, y + h/2);
+            ctx.lineTo(x + w, y + h/2);
+            ctx.stroke();
+
+            // 寫字
+            if (char !== " ") {
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 110px 'Microsoft JhengHei', sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                
+                // 模擬物理拉長效果 (scaleY)
+                ctx.save();
+                ctx.translate(x + w/2, y + h/2);
+                ctx.scale(1, 1.2);
+                ctx.fillText(char, 0, 0);
+                ctx.restore();
+            }
+        });
+
+        ctx.restore();
+
+        // 循環渲染
+        requestAnimationFrame(drawCanvasFrame);
+    }
+
+    // 全自動錄影控制
     function startAutoRecordFlow() {
         if (isPlaying) return;
         initAudio();
         toggleControls(false);
         
-        const viewport = document.getElementById('viewport');
+        const canvas = document.getElementById('recordingCanvas');
         isRecordingActive = true;
-        recordedChunks = [];
-
-        // 精準攔截頂部視窗的影音串流
-        const stream = viewport.captureStream ? viewport.captureStream(30) : viewport.webkitCaptureStream(30);
         
-        if (!stream) {
-            alert("目前瀏覽器不支援直接畫面錄製。");
-            toggleControls(true);
-            return;
-        }
+        // 啟動幕後像素引擎
+        drawCanvasFrame();
 
-        // 偵測並使用高相容錄影格式
-        let options = { mimeType: 'video/webm;codecs=vp9,opus' };
-        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-            options = { mimeType: 'video/webm;codecs=vp8' };
-        }
-        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-            options = { mimeType: 'video/webm' };
-        }
-
+        // 直接對 100% 開放權限的 Canvas 錄製
+        const stream = canvas.captureStream(30);
+        recordedChunks = [];
+        
+        // 使用極高相容編碼
+        let options = { mimeType: 'video/webm;codecs=vp8' };
         try {
             mediaRecorder = new MediaRecorder(stream, options);
         } catch(e) {
@@ -402,14 +461,13 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `perfect_flip_${Date.now()}.webm`;
+            a.download = `flip_video_${Date.now()}.webm`;
             a.click();
             toggleControls(true);
         };
 
         mediaRecorder.start();
 
-        // 啟動動畫
         setTimeout(() => {
             playCurrentInput();
         }, 400);
