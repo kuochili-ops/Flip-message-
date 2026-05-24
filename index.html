@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>𓃥 機械翻板訊息傳遞 App - 精準看板無贅板版</title>
+    <title>𓃥 機械翻板訊息傳遞 App - 啟利是大富翁限定版</title>
     <style>
         body { 
             background-color: #0e1117; margin: 0; 
@@ -166,7 +166,8 @@
 
     const NUM_SEQ = "0123456789".split('');
     const ALPHA_SEQ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split('');
-    const PADDING_CHINESE = "甲乙丙丁戊己".split('');
+    // 🛠️ 變更：湊數效果字改為「啟利是大富翁」
+    const PADDING_CHINESE = "啟利是大富翁".split('');
 
     function initAudio() {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -206,7 +207,6 @@
         return 'space';
     }
 
-    // 🛠️ 核心修改：精準根據輸入字串長度建立看板，不再有多餘的後端填充看板
     function rebuildTrack(charsArray, chinesePool) {
         const track = document.getElementById('panTrack');
         track.innerHTML = "";
@@ -235,7 +235,6 @@
                 const pool = seq.filter(c => c !== targetChar);
                 randomPick = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : seq[0];
             } else if (type === 'chinese') {
-                // 中文板子專屬：滾動字庫序列融合了「當前所有輸入中文字 + 甲乙丙丁湊數包」
                 seq = [...chinesePool];
                 const pool = seq.filter(c => c !== targetChar);
                 randomPick = pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : seq[0];
@@ -341,7 +340,6 @@
         });
     }
 
-    // 🛠️ 核心修改：只對使用者輸入的文字進行嚴格一比一拆解
     async function processMessage(fullText) {
         if (isPlaying) return;
         isPlaying = true;
@@ -351,27 +349,22 @@
         if (lines.length === 0) { isPlaying = false; return; }
 
         for (let line of lines) {
-            // 1. 抓出字串內含的純中文字
             let chineseChars = line.split('').filter(c => /[\u4e00-\u9fa5]/.test(c));
             let chineseCount = chineseChars.length;
 
-            // 2. 建立中文字的「滾動專用池」（如果中文字不滿六個，就把甲乙丙丁灌進池子裡，供翻牌動畫使用）
             let chineseAnimPool = [...chineseChars];
             if (chineseCount < 6) {
                 let needPackCount = 6 - chineseCount;
                 chineseAnimPool = chineseAnimPool.concat(PADDING_CHINESE.slice(0, needPackCount));
             }
 
-            // 3. 嚴格一比一對應使用者的輸入，不延長、不加贅板
             let finalDisplayArray = line.split('');
 
-            // 4. 重構智慧型看盤軌道
             rebuildTrack(finalDisplayArray, chineseAnimPool);
             await new Promise(r => setTimeout(r, 500)); 
 
             const track = document.getElementById('panTrack');
             
-            // 5. 依序翻出文字
             for (let i = 0; i < finalDisplayArray.length; i++) {
                 if (i >= 4) {
                     const cardWidth = document.querySelector('.flip-card').offsetWidth;
@@ -387,7 +380,6 @@
                 await new Promise(r => setTimeout(r, 180)); 
             }
 
-            // 最終乾淨利落的展示定格維持 2 秒
             await new Promise(r => setTimeout(r, 2000)); 
         }
 
@@ -403,7 +395,6 @@
         processMessage(text || "Annie 早安");
     }
 
-    // 幕後錄影引擎
     function drawCanvasFrame() {
         if (!isRecordingActive) return;
 
@@ -482,7 +473,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `flip_clean_mix_${Date.now()}.webm`;
+            a.download = `flip_rich_mix_${Date.now()}.webm`;
             a.click();
             toggleControls(true);
         };
