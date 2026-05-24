@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>𓃥 機械翻板訊息傳遞 App - 鏡頭平移版</title>
+    <title>𓃥 機械翻板訊息傳遞 App - 全自動錄影版</title>
     <style>
         body { 
             background-color: #0e1117; margin: 0; 
@@ -12,25 +12,25 @@
             user-select: none; color: #fff;
         }
 
-        /* 16:9 頂部手機顯示視窗 (只容納四塊板子的寬度) */
+        /* 16:9 頂部手機顯示視窗 */
         .window-viewport { 
             width: 100vw; 
             aspect-ratio: 16 / 9; 
             background: #000; 
-            overflow: hidden; /* 裁剪掉視窗外的板子 */
+            overflow: hidden; 
             position: relative;
             box-shadow: 0 4px 20px rgba(0,0,0,0.8);
             border-bottom: 1px solid #222;
         }
 
-        /* 實際並排所有翻板的長軌道，用來做 Pan 平移 */
+        /* 實際並排所有翻板的長軌道 (Pan Track) */
         .pan-track {
             display: flex;
             height: 100%;
             align-items: center;
-            padding-left: 6vw; /* 讓第一塊板子居中偏左起步 */
+            padding-left: 6vw; 
             gap: 3vw; 
-            transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1); /* Pan 鏡頭滑動流暢度 */
+            transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1); 
             transform: translateX(0px);
         }
 
@@ -42,7 +42,7 @@
             font-size: 0.6rem; cursor: pointer; display: none; z-index: 100;
         }
 
-        /* 基礎翻板外殼 (極致機械規格) */
+        /* 基礎翻板外殼 */
         .flip-card { 
             position: relative; 
             background: #1a1a1a; 
@@ -50,7 +50,7 @@
             font-weight: 900; 
             perspective: 600px; 
             color: #fff; 
-            flex-shrink: 0; /* 防止被擠壓 */
+            flex-shrink: 0; 
             width: 20vw;
             height: 28vw;
             max-width: 110px;
@@ -134,7 +134,6 @@
         button:hover { background: #30363d; border-color: #8b949e; }
         button.action-rec { background: #238636; color: #fff; border-color: #2ea44f; }
         button.action-rec:hover { background: #2ea44f; }
-        button.action-stop { background: #da3637; color: #fff; border-color: #f85149; }
     </style>
 </head>
 <body>
@@ -149,7 +148,7 @@
     <div class="btn-row">
         <button onclick="playCurrentInput()">預覽顯示</button>
         <button onclick="shareURL()">URL 分享鈕</button>
-        <button id="recBtn" class="action-rec" onclick="toggleRecording()">錄影鈕</button>
+        <button id="recBtn" class="action-rec" onclick="startAutoRecordFlow()">自動錄影鈕</button>
         <button onclick="toggleControls(false)">隱藏控制界面</button>
     </div>
 </div>
@@ -160,6 +159,7 @@
     let mediaRecorder = null;
     let recordedChunks = [];
     let isPlaying = false;
+    let isRecordingActive = false;
 
     const NUM_SEQ = "0123456789";
     const ALPHA_SEQ = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -194,12 +194,11 @@
         `;
     }
 
-    // 動態根據目前的字串長度，在軌道上產生對應數量的翻字板
     function rebuildTrack(totalCards) {
         const track = document.getElementById('panTrack');
         track.innerHTML = "";
         currentStates = {};
-        track.style.transform = "translateX(0px)"; // 重設 Pan 位置
+        track.style.transform = "translateX(0px)"; 
 
         for (let i = 0; i < totalCards; i++) {
             const cardId = `card-${i}`;
@@ -229,12 +228,9 @@
         el.classList.add('flipping');
 
         setTimeout(() => { playFlapSound(); }, 20);
-        setTimeout(() => {
-            el.querySelector('.static-bottom').innerHTML = displayNew;
-        }, 180); 
+        setTimeout(() => { el.querySelector('.static-bottom').innerHTML = displayNew; }, 180); 
     }
 
-    // 按部就班從空格順著字串序列翻動，直到該板子出現目標字停止
     function flipCardToTarget(id, targetVal, customSeq) {
         return new Promise((resolve) => {
             targetVal = targetVal.toUpperCase();
@@ -264,11 +260,11 @@
                     clearInterval(interval);
                     resolve();
                 }
-            }, 180); // 舒服的機械翻轉速度
+            }, 180); 
         });
     }
 
-    // 處理 Pan 移動與翻板的主控制鏈
+    // 核心播放程序 (整合全自動錄影控時)
     async function processMessage(fullText) {
         if (isPlaying) return;
         isPlaying = true;
@@ -278,7 +274,6 @@
         if (lines.length === 0) { isPlaying = false; return; }
 
         for (let line of lines) {
-            // 補滿六字原則
             let processedLine = line;
             if (processedLine.length < 6) {
                 const padding = "甲乙丙丁戊己";
@@ -288,38 +283,83 @@
             const charsArray = processedLine.split('');
             const totalCards = charsArray.length;
             
-            // 1. 動態重構實體長度軌道
             rebuildTrack(totalCards);
-            await new Promise(r => setTimeout(r, 100));
+            await new Promise(r => setTimeout(r, 200));
 
-            // 2. 依序翻轉並觸發 Pan 移動
             const track = document.getElementById('panTrack');
             
             for (let i = 0; i < totalCards; i++) {
-                // 如果已經超過第 4 塊翻板，畫面就要開始往右 Pan (滑動移位)
                 if (i >= 4) {
-                    // 計算單塊板子加間距的寬度，精準平移鏡頭
                     const cardWidth = document.querySelector('.flip-card').offsetWidth;
-                    const gapWidth = window.innerWidth * 0.03; //對應 3vw
+                    const gapWidth = window.innerWidth * 0.03; 
                     const offset = (i - 3) * (cardWidth + gapWidth);
                     track.style.transform = `translateX(-${offset}px)`;
-                    await new Promise(r => setTimeout(r, 300)); // 等待鏡頭平移微調
+                    await new Promise(r => setTimeout(r, 300)); 
                 }
 
-                // 當前最左邊（或當前聚焦）的翻板開始滾動，直到指定字出現停止
                 await flipCardToTarget(`card-${i}`, charsArray[i], charsArray);
                 await new Promise(r => setTimeout(r, 200)); 
             }
-
-            // 最後一塊翻字板定位後，暫停一秒再進行下一行
-            await new Promise(r => setTimeout(r, 1000));
+            await new Promise(r => setTimeout(r, 1500)); // 播完特定行留白停頓
         }
+
         isPlaying = false;
+
+        // 【自動化核心】：如果當前處於錄影狀態，播放完畢自動收尾並下載
+        if (isRecordingActive) {
+            stopAndSaveRecording();
+        }
     }
 
     function playCurrentInput() {
         const text = document.getElementById('msgInput').value;
         processMessage(text || "大家新年快樂");
+    }
+
+    // 全自動錄影流程啟動器
+    function startAutoRecordFlow() {
+        if (isPlaying) return;
+        initAudio();
+        
+        // 1. 隱藏控制界面，確保影片乾淨
+        toggleControls(false);
+        
+        // 2. 喚醒錄影
+        recordedChunks = [];
+        const stream = document.body.captureStream ? document.body.captureStream(30) : null;
+        if (!stream) { 
+            alert("此瀏覽器不支援畫面錄製。"); 
+            toggleControls(true);
+            return; 
+        }
+        
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+        mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+            const blob = new Blob(recordedChunks, { type: 'video/webm' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `auto_flip_${Date.now()}.webm`;
+            a.click();
+            
+            // 錄影下載完成後，自動把控制界面還給使用者
+            toggleControls(true);
+        };
+
+        mediaRecorder.start();
+        isRecordingActive = true;
+
+        // 3. 觸發播放
+        playCurrentInput();
+    }
+
+    // 關閉錄影並存檔
+    function stopAndSaveRecording() {
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+        }
+        isRecordingActive = false;
     }
 
     function toggleControls(show) {
@@ -332,51 +372,23 @@
         if (!msg) { alert("請先輸入訊息再進行分享！"); return; }
         const url = `${window.location.origin}${window.location.pathname}?msg=${encodeURIComponent(msg)}`;
         navigator.clipboard.writeText(url).then(() => {
-            alert("已複製 Pan 鏡頭版專屬網址！");
+            alert("已複製全自動錄影版分享網址！");
         }).catch(() => {
             prompt("請複製以下網址進行分享：", url);
         });
     }
 
-    // 畫布級錄影
-    function toggleRecording() {
-        const recBtn = document.getElementById('recBtn');
-        if (mediaRecorder && mediaRecorder.state === "recording") {
-            mediaRecorder.stop();
-            recBtn.textContent = "錄影鈕";
-            recBtn.className = "action-rec";
-        } else {
-            initAudio();
-            recordedChunks = [];
-            const stream = document.body.captureStream ? document.body.captureStream(30) : null;
-            if (!stream) { alert("此瀏覽器不支援畫面錄製。"); return; }
-            
-            mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
-            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
-            mediaRecorder.onstop = () => {
-                const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `pan_flip_message_${Date.now()}.webm`;
-                a.click();
-            };
-            mediaRecorder.start();
-            recBtn.textContent = "停止並存檔";
-            recBtn.className = "action-stop";
-            
-            playCurrentInput();
-        }
-    }
-
     window.onload = () => {
-        rebuildTrack(4); // 預設初始畫面留 4 塊空白板子
+        rebuildTrack(4); 
         const params = new URLSearchParams(window.location.search);
         if (params.has('msg')) {
             const msgVal = params.get('msg');
             document.getElementById('msgInput').value = msgVal;
-            toggleControls(false);
-            setTimeout(() => { processMessage(msgVal); }, 600);
+            
+            // 如果是由 URL 點進來的，觸發全自動錄影流程
+            setTimeout(() => {
+                startAutoRecordFlow();
+            }, 1000);
         }
     };
     window.addEventListener('click', initAudio, { once: true });
