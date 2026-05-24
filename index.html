@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>𓃥 機械翻板訊息傳遞 App - 隨機起點與高相容錄影版</title>
+    <title>𓃥 機械翻板訊息傳遞 App - 畫布級終極錄影版</title>
     <style>
         body { 
             background-color: #0e1117; margin: 0; 
@@ -134,7 +134,11 @@
         button:hover { background: #30363d; border-color: #8b949e; }
         button.action-rec { background: #238636; color: #fff; border-color: #2ea44f; }
         button.action-rec:hover { background: #2ea44f; }
+
+        /* 隱藏的同步錄影畫布（錄製技術核心） */
+        #recordingCanvas { display: none; }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
 
@@ -153,6 +157,8 @@
     </div>
 </div>
 
+<canvas id="recordingCanvas"></canvas>
+
 <script>
     let currentStates = {};
     let audioCtx = null;
@@ -160,9 +166,10 @@
     let recordedChunks = [];
     let isPlaying = false;
     let isRecordingActive = false;
+    let canvasAnimLoop = null;
 
     const NUM_SEQ = "0123456789";
-    const ALPHA_SEQ = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const ALPHA_SEQ = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
     function initAudio() {
         if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -195,7 +202,7 @@
         `;
     }
 
-    // 重構軌道：起始字從目前的候選字串中「隨機挑選」
+    // 重構軌道
     function rebuildTrack(totalCards, sourceCharsArray) {
         const track = document.getElementById('panTrack');
         track.innerHTML = "";
@@ -204,17 +211,13 @@
 
         for (let i = 0; i < totalCards; i++) {
             const cardId = `card-${i}`;
-            
-            // 🛠️ 核心修改：從當前處理的字串陣列中，隨機抽出一個字作為起始面板字
             const randomPick = sourceCharsArray[Math.floor(Math.random() * sourceCharsArray.length)];
-            
             const card = document.createElement('div');
             card.className = 'flip-card';
             card.id = cardId;
             card.innerHTML = createPanelHTML(randomPick);
             track.appendChild(card);
             
-            // 紀錄該板子的初始狀態
             currentStates[cardId] = randomPick;
         }
     }
@@ -239,26 +242,41 @@
         setTimeout(() => { el.querySelector('.static-bottom').innerHTML = displayNew; }, 180); 
     }
 
+    // 核心翻轉演算法：修正翻板規則，確保「隨機起始字前必為空白」
     function flipCardToTarget(id, targetVal, customSeq) {
         return new Promise((resolve) => {
             targetVal = targetVal.toUpperCase();
             let startVal = currentStates[id];
             if (startVal === targetVal) { resolve(); return; }
 
-            let seq = [" "];
+            // 1. 基底動態建立常規序列
+            let baseSeq = [];
             if (NUM_SEQ.includes(targetVal)) {
-                seq = seq.concat(NUM_SEQ.split(''));
+                baseSeq = NUM_SEQ.split('');
             } else if (ALPHA_SEQ.includes(targetVal)) {
-                seq = seq.concat(ALPHA_SEQ.trim().split(''));
+                baseSeq = ALPHA_SEQ.split('');
             } else {
-                seq = seq.concat(customSeq);
+                baseSeq = [...customSeq];
             }
 
+            // 2. 🛠️ 核心規則修正：動態重組字庫序列，把「空白」精確安插在「隨解起始字(startVal)」的前面
+            let seq = [];
+            let startIdx = baseSeq.indexOf(startVal);
+            
+            if (startIdx !== -1) {
+                // 將序列重新排列，使隨機字為首，並在最前方塞入一個空白
+                let reordered = baseSeq.slice(startIdx).concat(baseSeq.slice(0, startIdx));
+                seq = [" ", ...reordered];
+            } else {
+                seq = [" ", startVal, ...baseSeq];
+            }
+
+            // 此時 curIdx 必定從序列中的隨機起始字（索引值 1）出發
             let curIdx = seq.indexOf(startVal);
-            // 如果起點字不在常規序列裡，強制重設回 0
-            if (curIdx === -1) curIdx = 0;
+            if (curIdx === -1) curIdx = 1;
 
             let interval = setInterval(() => {
+                // 順向往後移動（若到底則循環回空白索引0）
                 curIdx = (curIdx + 1) % seq.length;
                 let nextChar = seq[curIdx];
                 
@@ -269,11 +287,11 @@
                     clearInterval(interval);
                     resolve();
                 }
-            }, 150); // 稍微加快一點滾動流暢感
+            }, 160); 
         });
     }
 
-    // 核心播放程序
+    // 播放訊息控時器
     async function processMessage(fullText) {
         if (isPlaying) return;
         isPlaying = true;
@@ -292,9 +310,8 @@
             const charsArray = processedLine.split('');
             const totalCards = charsArray.length;
             
-            // 傳入 charsArray 讓重建軌道時可以隨機取字
             rebuildTrack(totalCards, charsArray);
-            await new Promise(r => setTimeout(r, 400)); // 留時間給眼睛看隨機初始狀態
+            await new Promise(r => setTimeout(r, 600)); // 停頓讓使用者看清隨機起始字
 
             const track = document.getElementById('panTrack');
             
@@ -304,11 +321,11 @@
                     const gapWidth = window.innerWidth * 0.03; 
                     const offset = (i - 3) * (cardWidth + gapWidth);
                     track.style.transform = `translateX(-${offset}px)`;
-                    await new Promise(r => setTimeout(r, 300)); 
+                    await new Promise(r => setTimeout(r, 350)); 
                 }
 
                 await flipCardToTarget(`card-${i}`, charsArray[i], charsArray);
-                await new Promise(r => setTimeout(r, 150)); 
+                await new Promise(r => setTimeout(r, 200)); 
             }
             await new Promise(r => setTimeout(r, 1500)); 
         }
@@ -325,60 +342,75 @@
         processMessage(text || "大家新年快樂");
     }
 
-    // 全自動錄影流程 (修正 captureStream 綁定目標)
+    // 🛠️ 終極錄影核心：利用 Canvas 與 html2canvas 進行跨瀏覽器安全同步
+    function syncViewportToCanvas() {
+        if (!isRecordingActive) return;
+        const v = document.getElementById('viewport');
+        const canvas = document.getElementById('recordingCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 初始化畫布尺寸符合 16:9 比例
+        if (canvas.width !== v.offsetWidth) {
+            canvas.width = v.offsetWidth;
+            canvas.height = v.offsetHeight;
+        }
+
+        // 使用最高效的 html2canvas 快照繪製到隱藏畫布上
+        html2canvas(v, {
+            backgroundColor: "#000",
+            scale: 1, // 確保移動端效能流暢
+            logging: false
+        }).then(snapCanvas => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(snapCanvas, 0, 0);
+            if (isRecordingActive) {
+                canvasAnimLoop = requestAnimationFrame(syncViewportToCanvas);
+            }
+        });
+    }
+
+    // 全自動錄影控制
     function startAutoRecordFlow() {
         if (isPlaying) return;
         initAudio();
-        
         toggleControls(false);
         
+        const canvas = document.getElementById('recordingCanvas');
+        isRecordingActive = true;
+        
+        // 1. 啟動 Canvas 像素傳送帶
+        syncViewportToCanvas();
+
+        // 2. 對安全的 Canvas 進行錄製，避開瀏覽器權限封鎖
+        const stream = canvas.captureStream(30);
         recordedChunks = [];
-        // 🛠️ 關鍵修正：不再對 body 錄影，而是改對 16:9 的視窗容器「#viewport」進行錄製，大大提升瀏覽器相容性！
-        const videoTarget = document.getElementById('viewport');
-        const stream = videoTarget.captureStream ? videoTarget.captureStream(30) : videoTarget.webkitCaptureStream(30);
         
-        if (!stream) { 
-            alert("此瀏覽器環境安全性限制，無法啟動錄影。建議使用 Chrome 瀏覽器。"); 
-            toggleControls(true);
-            return; 
-        }
-        
-        // 為了相容行動裝置，採用通用錄影配置
-        let options = { mimeType: 'video/webm;codecs=vp8' };
-        try {
-            mediaRecorder = new MediaRecorder(stream, options);
-        } catch(e) {
-            options = { mimeType: 'video/webm' };
-            try {
-                mediaRecorder = new MediaRecorder(stream, options);
-            } catch(err) {
-                mediaRecorder = new MediaRecorder(stream);
-            }
-        }
-        
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp8' });
         mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
         mediaRecorder.onstop = () => {
+            cancelAnimationFrame(canvasAnimLoop);
             const blob = new Blob(recordedChunks, { type: 'video/webm' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `mechanical_flip_${Date.now()}.webm`;
+            a.download = `mechanical_pan_${Date.now()}.webm`;
             a.click();
             toggleControls(true);
         };
 
         mediaRecorder.start();
-        isRecordingActive = true;
 
-        // 啟動翻頁
-        playCurrentInput();
+        // 3. 延時啟動翻牌，留給畫布初始化準備時間
+        setTimeout(() => {
+            playCurrentInput();
+        }, 300);
     }
 
     function stopAndSaveRecording() {
+        isRecordingActive = false;
         if (mediaRecorder && mediaRecorder.state === "recording") {
             mediaRecorder.stop();
         }
-        isRecordingActive = false;
     }
 
     function toggleControls(show) {
@@ -388,24 +420,17 @@
 
     function shareURL() {
         const msg = document.getElementById('msgInput').value;
-        if (!msg) { alert("請先輸入訊息再進行分享！"); return; }
+        if (!msg) { alert("請先輸入訊息！"); return; }
         const url = `${window.location.origin}${window.location.pathname}?msg=${encodeURIComponent(msg)}`;
-        navigator.clipboard.writeText(url).then(() => {
-            alert("已複製網址！");
-        }).catch(() => {
-            prompt("請複製以下網址：", url);
-        });
+        navigator.clipboard.writeText(url).then(() => alert("網址已複製！"));
     }
 
     window.onload = () => {
         rebuildTrack(4, [" ", " ", " ", " "]); 
         const params = new URLSearchParams(window.location.search);
         if (params.has('msg')) {
-            const msgVal = params.get('msg');
-            document.getElementById('msgInput').value = msgVal;
-            setTimeout(() => {
-                startAutoRecordFlow();
-            }, 1000);
+            document.getElementById('msgInput').value = params.get('msg');
+            setTimeout(() => { startAutoRecordFlow(); }, 1200);
         }
     };
     window.addEventListener('click', initAudio, { once: true });
