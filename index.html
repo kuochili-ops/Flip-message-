@@ -1,1 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>𓃥 機械翻板訊息傳遞 App - 鏡頭平移版</title>
+    <style>
+        body { 
+            background-color: #0e1117; margin: 0; 
+            display: flex; flex-direction: column; align-items: center; 
+            min-height: 100vh; font-family: "Microsoft JhengHei", sans-serif;
+            user-select: none; color: #fff;
+        }
 
+        /* 16:9 頂部手機顯示視窗 (只容納四塊板子的寬度) */
+        .window-viewport { 
+            width: 100vw; 
+            aspect-ratio: 16 / 9; 
+            background: #000; 
+            overflow: hidden; /* 裁剪掉視窗外的板子 */
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+            border-bottom: 1px solid #222;
+        }
+
+        /* 實際並排所有翻板的長軌道，用來做 Pan 平移 */
+        .pan-track {
+            display: flex;
+            height: 100%;
+            align-items: center;
+            padding-left: 6vw; /* 讓第一塊板子居中偏左起步 */
+            gap: 3vw; 
+            transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1); /* Pan 鏡頭滑動流暢度 */
+            transform: translateX(0px);
+        }
+
+        /* 恢復界面按鈕 */
+        .restore-btn {
+            position: absolute; bottom: 10px; right: 10px;
+            background: rgba(255,255,255,0.1); color: #aaa;
+            border: none; padding: 5px 10px; border-radius: 4px;
+            font-size: 0.6rem; cursor: pointer; display: none; z-index: 100;
+        }
+
+        /* 基礎翻板外殼 (極致機械規格) */
+        .flip-card { 
+            position: relative; 
+            background: #1a1a1a; 
+            border-radius: 6px; 
+            font-weight: 900; 
+            perspective: 600px; 
+            color: #fff; 
+            flex-shrink: 0; /* 防止被擠壓 */
+            width: 20vw;
+            height: 28vw;
+            max-width: 110px;
+            max-height: 154px;
+            font-size: clamp(2.5rem, 12vw, 5.5rem);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.7);
+        }
+
+        /* 實體物理硬裁剪 */
+        .half-panel {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #1a1a1a; display: flex; align-items: center; justify-content: center;
+            border-radius: 6px; box-sizing: border-box;
+            backface-visibility: hidden; -webkit-backface-visibility: hidden;
+        }
+
+        /* 文字拉長 */
+        .half-panel span {
+            display: inline-block;
+            transform: scaleY(1.3);
+            transform-origin: center center;
+        }
+
+        /* 固定底板 */
+        .static-top { 
+            clip-path: inset(0% 0% 50% 0%); 
+            border-bottom: 1px solid rgba(0,0,0,0.6); 
+        }
+        .static-bottom { 
+            clip-path: inset(50% 0% 0% 0%); 
+        }
+
+        /* 旋轉活動葉片容器 */
+        .leaf-wrapper {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10;
+            transform-style: preserve-3d;
+            transform-origin: center center; 
+            background: transparent;
+        }
+
+        .leaf-front-panel {
+            clip-path: inset(0% 0% 50% 0%);
+            border-bottom: 1px solid rgba(0,0,0,0.6);
+        }
+        .leaf-back-panel {
+            clip-path: inset(50% 0% 0% 0%);
+            transform: rotateX(180deg);
+        }
+
+        /* 機械下翻動畫 */
+        .flipping .leaf-wrapper {
+            animation: flipDownAnimation 0.2s cubic-bezier(0.37, 0, 0.63, 1) forwards;
+        }
+        @keyframes flipDownAnimation {
+            0% { transform: rotateX(0deg); z-index: 12; }
+            49% { z-index: 12; }
+            50% { z-index: 9; }
+            100% { transform: rotateX(-180deg); z-index: 9; }
+        }
+
+        /* 下方操作界面 */
+        .control-panel { 
+            background: #161b22; padding: 20px; border-radius: 12px; 
+            width: 90vw; max-width: 560px; margin-top: 20px;
+            box-sizing: border-box; border: 1px solid #30363d;
+        }
+        textarea { 
+            width: 100%; height: 90px; background: #0d1117; color: #c9d1d9; 
+            border: 1px solid #30363d; padding: 12px; box-sizing: border-box; 
+            margin-bottom: 15px; border-radius: 6px; font-size: 1rem; resize: none;
+        }
+        textarea:focus { outline: 1px solid #58a6ff; }
+        
+        .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        button { 
+            background: #21262d; color: #c9d1d9; border: 1px solid #f0f6fc1a;
+            padding: 12px; border-radius: 6px; font-size: 0.95rem; font-weight: bold;
+            cursor: pointer; transition: 0.2s;
+        }
+        button:hover { background: #30363d; border-color: #8b949e; }
+        button.action-rec { background: #238636; color: #fff; border-color: #2ea44f; }
+        button.action-rec:hover { background: #2ea44f; }
+        button.action-stop { background: #da3637; color: #fff; border-color: #f85149; }
+    </style>
+</head>
+<body>
+
+<div class="window-viewport" id="viewport">
+    <div class="pan-track" id="panTrack"></div>
+    <button class="restore-btn" id="restoreBtn" onclick="toggleControls(true)">顯示控制界面</button>
+</div>
+
+<div class="control-panel" id="controlPanel">
+    <textarea id="msgInput" placeholder="請輸入欲傳遞的訊息（例如：大家新年快樂）"></textarea>
+    <div class="btn-row">
+        <button onclick="playCurrentInput()">預覽顯示</button>
+        <button onclick="shareURL()">URL 分享鈕</button>
+        <button id="recBtn" class="action-rec" onclick="toggleRecording()">錄影鈕</button>
+        <button onclick="toggleControls(false)">隱藏控制界面</button>
+    </div>
+</div>
+
+<script>
+    let currentStates = {};
+    let audioCtx = null;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let isPlaying = false;
+
+    const NUM_SEQ = "0123456789";
+    const ALPHA_SEQ = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    function initAudio() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    function playFlapSound() {
+        if (!audioCtx) return;
+        try {
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain); gain.connect(audioCtx.destination);
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(140, audioCtx.currentTime); 
+            osc.frequency.exponentialRampToValueAtTime(10, audioCtx.currentTime + 0.04);
+            gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.05);
+        } catch (e) {}
+    }
+
+    function createPanelHTML() {
+        return `
+            <div class="half-panel static-top"><span>&nbsp;</span></div>
+            <div class="half-panel static-bottom"><span>&nbsp;</span></div>
+            <div class="leaf-wrapper">
+                <div class="half-panel leaf-front-panel"><span>&nbsp;</span></div>
+                <div class="half-panel leaf-back-panel"><span>&nbsp;</span></div>
+            </div>
+        `;
+    }
+
+    // 動態根據目前的字串長度，在軌道上產生對應數量的翻字板
+    function rebuildTrack(totalCards) {
+        const track = document.getElementById('panTrack');
+        track.innerHTML = "";
+        currentStates = {};
+        track.style.transform = "translateX(0px)"; // 重設 Pan 位置
+
+        for (let i = 0; i < totalCards; i++) {
+            const cardId = `card-${i}`;
+            const card = document.createElement('div');
+            card.className = 'flip-card';
+            card.id = cardId;
+            card.innerHTML = createPanelHTML();
+            track.appendChild(card);
+            currentStates[cardId] = " ";
+        }
+    }
+
+    function runPhysicalFlipAnimation(id, newVal, oldVal) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        
+        const displayNew = newVal === " " ? "<span>&nbsp;</span>" : `<span>${newVal}</span>`;
+        const displayOld = oldVal === " " ? "<span>&nbsp;</span>" : `<span>${oldVal}</span>`;
+
+        el.querySelector('.static-top').innerHTML = displayNew;
+        el.querySelector('.static-bottom').innerHTML = displayOld;
+        el.querySelector('.leaf-front-panel').innerHTML = displayOld;
+        el.querySelector('.leaf-back-panel').innerHTML = displayNew;
+
+        el.classList.remove('flipping');
+        void el.offsetWidth; 
+        el.classList.add('flipping');
+
+        setTimeout(() => { playFlapSound(); }, 20);
+        setTimeout(() => {
+            el.querySelector('.static-bottom').innerHTML = displayNew;
+        }, 180); 
+    }
+
+    // 按部就班從空格順著字串序列翻動，直到該板子出現目標字停止
+    function flipCardToTarget(id, targetVal, customSeq) {
+        return new Promise((resolve) => {
+            targetVal = targetVal.toUpperCase();
+            let startVal = currentStates[id];
+            if (startVal === targetVal) { resolve(); return; }
+
+            let seq = [" "];
+            if (NUM_SEQ.includes(targetVal)) {
+                seq = seq.concat(NUM_SEQ.split(''));
+            } else if (ALPHA_SEQ.includes(targetVal)) {
+                seq = seq.concat(ALPHA_SEQ.trim().split(''));
+            } else {
+                seq = seq.concat(customSeq);
+            }
+
+            let curIdx = seq.indexOf(startVal);
+            if (curIdx === -1) curIdx = 0;
+
+            let interval = setInterval(() => {
+                curIdx = (curIdx + 1) % seq.length;
+                let nextChar = seq[curIdx];
+                
+                runPhysicalFlipAnimation(id, nextChar, currentStates[id]);
+                currentStates[id] = nextChar;
+
+                if (nextChar === targetVal) {
+                    clearInterval(interval);
+                    resolve();
+                }
+            }, 180); // 舒服的機械翻轉速度
+        });
+    }
+
+    // 處理 Pan 移動與翻板的主控制鏈
+    async function processMessage(fullText) {
+        if (isPlaying) return;
+        isPlaying = true;
+        initAudio();
+
+        const lines = fullText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+        if (lines.length === 0) { isPlaying = false; return; }
+
+        for (let line of lines) {
+            // 補滿六字原則
+            let processedLine = line;
+            if (processedLine.length < 6) {
+                const padding = "甲乙丙丁戊己";
+                processedLine = processedLine + padding.substring(0, 6 - processedLine.length);
+            }
+
+            const charsArray = processedLine.split('');
+            const totalCards = charsArray.length;
+            
+            // 1. 動態重構實體長度軌道
+            rebuildTrack(totalCards);
+            await new Promise(r => setTimeout(r, 100));
+
+            // 2. 依序翻轉並觸發 Pan 移動
+            const track = document.getElementById('panTrack');
+            
+            for (let i = 0; i < totalCards; i++) {
+                // 如果已經超過第 4 塊翻板，畫面就要開始往右 Pan (滑動移位)
+                if (i >= 4) {
+                    // 計算單塊板子加間距的寬度，精準平移鏡頭
+                    const cardWidth = document.querySelector('.flip-card').offsetWidth;
+                    const gapWidth = window.innerWidth * 0.03; //對應 3vw
+                    const offset = (i - 3) * (cardWidth + gapWidth);
+                    track.style.transform = `translateX(-${offset}px)`;
+                    await new Promise(r => setTimeout(r, 300)); // 等待鏡頭平移微調
+                }
+
+                // 當前最左邊（或當前聚焦）的翻板開始滾動，直到指定字出現停止
+                await flipCardToTarget(`card-${i}`, charsArray[i], charsArray);
+                await new Promise(r => setTimeout(r, 200)); 
+            }
+
+            // 最後一塊翻字板定位後，暫停一秒再進行下一行
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        isPlaying = false;
+    }
+
+    function playCurrentInput() {
+        const text = document.getElementById('msgInput').value;
+        processMessage(text || "大家新年快樂");
+    }
+
+    function toggleControls(show) {
+        document.getElementById('controlPanel').style.display = show ? 'block' : 'none';
+        document.getElementById('restoreBtn').style.display = show ? 'none' : 'block';
+    }
+
+    function shareURL() {
+        const msg = document.getElementById('msgInput').value;
+        if (!msg) { alert("請先輸入訊息再進行分享！"); return; }
+        const url = `${window.location.origin}${window.location.pathname}?msg=${encodeURIComponent(msg)}`;
+        navigator.clipboard.writeText(url).then(() => {
+            alert("已複製 Pan 鏡頭版專屬網址！");
+        }).catch(() => {
+            prompt("請複製以下網址進行分享：", url);
+        });
+    }
+
+    // 畫布級錄影
+    function toggleRecording() {
+        const recBtn = document.getElementById('recBtn');
+        if (mediaRecorder && mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+            recBtn.textContent = "錄影鈕";
+            recBtn.className = "action-rec";
+        } else {
+            initAudio();
+            recordedChunks = [];
+            const stream = document.body.captureStream ? document.body.captureStream(30) : null;
+            if (!stream) { alert("此瀏覽器不支援畫面錄製。"); return; }
+            
+            mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `pan_flip_message_${Date.now()}.webm`;
+                a.click();
+            };
+            mediaRecorder.start();
+            recBtn.textContent = "停止並存檔";
+            recBtn.className = "action-stop";
+            
+            playCurrentInput();
+        }
+    }
+
+    window.onload = () => {
+        rebuildTrack(4); // 預設初始畫面留 4 塊空白板子
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('msg')) {
+            const msgVal = params.get('msg');
+            document.getElementById('msgInput').value = msgVal;
+            toggleControls(false);
+            setTimeout(() => { processMessage(msgVal); }, 600);
+        }
+    };
+    window.addEventListener('click', initAudio, { once: true });
+</script>
+
+</body>
+</html>
