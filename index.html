@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>𓃥 機械翻板訊息傳遞 App - 100% 相容終極錄影版</title>
+    <title>𓃥 機械翻板訊息傳遞 App - 網址相容優化版</title>
     <style>
         body { 
             background-color: #0e1117; margin: 0; 
@@ -23,7 +23,7 @@
             border-bottom: 1px solid #222;
         }
 
-        /* 實際並排所有翻板的長軌道 (Pan Track) */
+        /* 實際並排所有翻板的長軌道 */
         .pan-track {
             display: flex;
             height: 100%;
@@ -121,17 +121,15 @@
         }
         textarea:focus { outline: 1px solid #58a6ff; }
         
-        .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        /* 橫向排列四個按鈕 */
+        .btn-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
         button { 
-            background: #21262d; color: #c9d1d9; border: 1px solid #f0f6fc1a;
-            padding: 12px; border-radius: 6px; font-size: 0.95rem; font-weight: bold;
-            cursor: pointer; transition: 0.2s;
+            background: #ffffff; color: #000000; border: none;
+            padding: 10px 4px; border-radius: 20px; font-size: 0.85rem; font-weight: bold;
+            cursor: pointer; transition: 0.2s; text-align: center;
         }
-        button:hover { background: #30363d; border-color: #8b949e; }
-        button.action-rec { background: #238636; color: #fff; border-color: #2ea44f; }
-        button.action-rec:hover { background: #2ea44f; }
+        button:hover { background: #e0e0e0; }
 
-        /* 隱藏的背景畫布（用來繞過所有錄影限制） */
         #recordingCanvas { display: none; }
     </style>
 </head>
@@ -147,7 +145,7 @@
     <div class="btn-row">
         <button onclick="playCurrentInput()">預覽顯示</button>
         <button onclick="shareURL()">產生網址</button>
-        <button id="recBtn" class="action-rec" onclick="startAutoRecordFlow()">錄影存檔</button>
+        <button id="recBtn" onclick="startAutoRecordFlow()">錄影存檔</button>
         <button onclick="toggleControls(false)">隱藏界面</button>
     </div>
 </div>
@@ -163,7 +161,6 @@
     let isPlaying = false;
     let isRecordingActive = false;
 
-    // Canvas 渲染專用變數
     let canvasTrackX = 0; 
     let targetCanvasTrackX = 0;
 
@@ -346,7 +343,6 @@
                     const offset = (i - 3) * (cardWidth + gapWidth);
                     track.style.transform = `translateX(-${offset}px)`;
                     
-                    // 同步給幕後 Canvas 計算位移量
                     targetCanvasTrackX = -(i - 3) * (140 + 20); 
                     await new Promise(r => setTimeout(r, 350)); 
                 }
@@ -369,39 +365,33 @@
         processMessage(text || "大家新年快樂");
     }
 
-    // 🛠️ 終極二維渲染引擎（直接將狀態重繪製到 Canvas 像素，100% 繞過相容性 Bug）
     function drawCanvasFrame() {
         if (!isRecordingActive) return;
 
         const canvas = document.getElementById('recordingCanvas');
         const ctx = canvas.getContext('2d');
 
-        // 1. 塗黑背景 (16:9 比例標竿 1280x720)
         ctx.fillStyle = "#000000";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // 2. 軌道平滑逼近緩動
         canvasTrackX += (targetCanvasTrackX - canvasTrackX) * 0.1;
 
-        // 3. 繪製所有活動看板
         ctx.save();
-        ctx.translate(80 + canvasTrackX, 150); // 基礎起點位移
+        ctx.translate(80 + canvasTrackX, 150); 
 
         const cardKeys = Object.keys(currentStates);
         cardKeys.forEach((key, index) => {
             const char = currentStates[key] || " ";
-            const x = index * (140 + 20); // 卡片寬 140，間距 20
+            const x = index * (140 + 20); 
             const y = 0;
             const w = 140;
             const h = 210;
 
-            // 畫卡片暗黑外殼
             ctx.fillStyle = "#1a1a1a";
             ctx.beginPath();
             ctx.roundRect(x, y, w, h, 12);
             ctx.fill();
 
-            // 畫分頁水平黑線
             ctx.strokeStyle = "rgba(0,0,0,0.6)";
             ctx.lineWidth = 3;
             ctx.beginPath();
@@ -409,14 +399,12 @@
             ctx.lineTo(x + w, y + h/2);
             ctx.stroke();
 
-            // 寫字
             if (char !== " ") {
                 ctx.fillStyle = "#ffffff";
                 ctx.font = "bold 110px 'Microsoft JhengHei', sans-serif";
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
                 
-                // 模擬物理拉長效果 (scaleY)
                 ctx.save();
                 ctx.translate(x + w/2, y + h/2);
                 ctx.scale(1, 1.2);
@@ -426,12 +414,9 @@
         });
 
         ctx.restore();
-
-        // 循環渲染
         requestAnimationFrame(drawCanvasFrame);
     }
 
-    // 全自動錄影控制
     function startAutoRecordFlow() {
         if (isPlaying) return;
         initAudio();
@@ -440,14 +425,11 @@
         const canvas = document.getElementById('recordingCanvas');
         isRecordingActive = true;
         
-        // 啟動幕後像素引擎
         drawCanvasFrame();
 
-        // 直接對 100% 開放權限的 Canvas 錄製
         const stream = canvas.captureStream(30);
         recordedChunks = [];
         
-        // 使用極高相容編碼
         let options = { mimeType: 'video/webm;codecs=vp8' };
         try {
             mediaRecorder = new MediaRecorder(stream, options);
@@ -485,11 +467,27 @@
         document.getElementById('restoreBtn').style.display = show ? 'none' : 'block';
     }
 
+    // 🛠️ 修正優化：高相容性網址產生器
     function shareURL() {
         const msg = document.getElementById('msgInput').value;
-        if (!msg) { alert("請先輸入訊息！"); return; }
-        const url = `${window.location.origin}${window.location.pathname}?msg=${encodeURIComponent(msg)}`;
-        navigator.clipboard.writeText(url).then(() => alert("網址已複製！"));
+        if (!msg) { alert("請先輸入訊息再產生網址！"); return; }
+        
+        // 精準取得當前環境（無論是 localhost 或外部 ip）的全網址路徑
+        const currentUrl = window.location.href.split('?')[0];
+        const finalUrl = `${currentUrl}?msg=${encodeURIComponent(msg)}`;
+
+        // 第一防線：常規寫入剪貼簿
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(finalUrl).then(() => {
+                alert("網址已成功複製到剪貼簿！");
+            }).catch(() => {
+                // 第二防線：若瀏覽器拒絕權限，則改用 Prompt 彈窗讓使用者手動複製
+                window.prompt("因為瀏覽器安全限制，請全選並複製下方網址：", finalUrl);
+            });
+        } else {
+            // 第三防線：舊版瀏覽器或內嵌環境直接用 Prompt
+            window.prompt("請全選並複製下方專屬分享網址：", finalUrl);
+        }
     }
 
     window.onload = () => {
